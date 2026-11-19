@@ -1,0 +1,1466 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FS PICTURES - Wedding Investment</title>
+  <meta name="description" content="Official Wedding Photography Investment & Package Quotation by Firdaus Shah (FS Pictures)." />
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- React & ReactDOM Production CDN -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+  <!-- Babel Standalone untuk JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Tone.js untuk alunan piano romantik automatik -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+
+  <style>
+    html {
+      scroll-behavior: smooth;
+      -webkit-tap-highlight-color: transparent;
+    }
+    body {
+      background-color: #09090b;
+      color: #f4f4f5;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      overflow-x: hidden;
+    }
+    select option {
+      background-color: #09090b;
+      color: #ffffff;
+    }
+    @media screen and (max-width: 640px) {
+      input, select, textarea {
+        font-size: 16px !important;
+      }
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-zinc-950 text-zinc-100 selection:bg-amber-500 selection:text-zinc-950 pb-24 lg:pb-0">
+  <div id="root"></div>
+
+  <!-- Elemen Audio HTML5 Native dengan autoplay & preload -->
+  <audio id="fs-bgm-audio" src="a-thousand-years.mp3" autoplay loop preload="auto" playsinline></audio>
+
+  <script>
+    (function() {
+      window.__fsUserMuted = false;
+      window.__fsAudioStarted = false;
+
+      window.__fsTryAutoPlay = function() {
+        if (window.__fsUserMuted || window.__fsAudioStarted) return;
+        var audio = document.getElementById('fs-bgm-audio');
+        if (!audio) return;
+        audio.volume = 0.4;
+        if (audio.paused) {
+          var playPromise = audio.play();
+          if (playPromise !== undefined) {
+            playPromise.then(function() {
+              window.__fsAudioStarted = true;
+              window.dispatchEvent(new Event('fs-audio-started'));
+            }).catch(function() {});
+          }
+        } else {
+          window.__fsAudioStarted = true;
+          window.dispatchEvent(new Event('fs-audio-started'));
+        }
+      };
+
+      window.addEventListener('DOMContentLoaded', function() {
+        var audio = document.getElementById('fs-bgm-audio');
+        if (audio) audio.load();
+        window.__fsTryAutoPlay();
+      });
+      window.addEventListener('load', window.__fsTryAutoPlay);
+
+      ['touchstart', 'touchend', 'pointerdown', 'mousedown', 'click', 'keydown'].forEach(function(evt) {
+        document.addEventListener(evt, window.__fsTryAutoPlay, true);
+        window.addEventListener(evt, window.__fsTryAutoPlay, true);
+      });
+    })();
+  </script>
+
+  <script type="text/babel">
+    const { useState, useMemo, useEffect } = React;
+
+    // =========================================================================
+    // KONFIGURASI UTAMA FS PICTURES
+    // =========================================================================
+    const GOOGLE_SHEETS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSRNlf9au_E9LE4LTTwtKrGBLSKH1P-zxBvULpkXPIQ3MsF7btxiIBRcNWCEpC9EALDl0y63c0jCTaI/pub?gid=0&single=true&output=csv';
+    const GOOGLE_SHEETS_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbwZvItp35gA7TvFyi60e_Lw47ZCioUQcFUUC2uXpEUFJDCuHZ7Ty3YPuIra9PtJ-E_1YQ/exec';
+    const CUSTOM_BGM_URL = 'a-thousand-years.mp3';
+    const WHATSAPP_NUMBER = '60164011169';
+
+    // Tarikh booked dikawal 100% dari Google Sheets tab "Date booked"
+    const DEFAULT_BOOKED_DATES = [];
+
+    const MONTHS_LIST = [
+      { value: '01', label: 'January' },
+      { value: '02', label: 'February' },
+      { value: '03', label: 'March' },
+      { value: '04', label: 'April' },
+      { value: '05', label: 'May' },
+      { value: '06', label: 'June' },
+      { value: '07', label: 'July' },
+      { value: '08', label: 'August' },
+      { value: '09', label: 'September' },
+      { value: '10', label: 'October' },
+      { value: '11', label: 'November' },
+      { value: '12', label: 'December' }
+    ];
+
+    const YEARS_LIST = ['2026', '2027', '2028'];
+    const DAYS_LIST = Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, '0'));
+
+    // Format YYYY-MM-DD kepada "15 February 2027"
+    const formatReadableDate = (isoDate) => {
+      if (!isoDate) return '';
+      const parts = isoDate.split('-');
+      if (parts.length !== 3) return isoDate;
+      const [year, month, day] = parts;
+      const monthObj = MONTHS_LIST.find(m => m.value === month);
+      return `${parseInt(day, 10)} ${monthObj ? monthObj.label : month} ${year}`;
+    };
+
+    // Normalisasi pelbagai format tarikh dari Google Sheets CSV kepada YYYY-MM-DD
+    const normalizeSheetDate = (raw) => {
+      if (!raw) return null;
+      const clean = String(raw).replace(/^["']|["']$/g, '').trim();
+      if (!clean) return null;
+
+      // 1. Format ISO YYYY-MM-DD
+      const isoMatch = clean.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+      if (isoMatch) {
+        return `${isoMatch[1]}-${isoMatch[2].padStart(2, '0')}-${isoMatch[3].padStart(2, '0')}`;
+      }
+
+      // 2. Format DD/MM/YYYY atau D-M-YYYY
+      const dmyMatch = clean.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+      if (dmyMatch) {
+        const part1 = parseInt(dmyMatch[1], 10);
+        const part2 = parseInt(dmyMatch[2], 10);
+        const year = dmyMatch[3];
+        if (part2 > 12 && part1 <= 12) {
+          return `${year}-${String(part1).padStart(2, '0')}-${String(part2).padStart(2, '0')}`;
+        }
+        return `${year}-${String(part2).padStart(2, '0')}-${String(part1).padStart(2, '0')}`;
+      }
+
+      // 3. Format Teks "2 Jan 2026" atau "2 January 2026"
+      const monthMap = {
+        jan: '01', january: '01',
+        feb: '02', february: '02',
+        mar: '03', march: '03',
+        apr: '04', april: '04',
+        may: '05',
+        jun: '06', june: '06',
+        jul: '07', july: '07',
+        aug: '08', august: '08',
+        sep: '09', sept: '09', september: '09',
+        oct: '10', october: '10',
+        nov: '11', november: '11',
+        dec: '12', december: '12'
+      };
+      const textMatch = clean.match(/^(\d{1,2})[\s-]+([a-zA-Z]+)[\s,-]+(\d{4})$/);
+      if (textMatch) {
+        const d = textMatch[1].padStart(2, '0');
+        const mKey = textMatch[2].toLowerCase();
+        const m = monthMap[mKey];
+        const y = textMatch[3];
+        if (m) return `${y}-${m}-${d}`;
+      }
+
+      return null;
+    };
+
+    // Data Rasmi Pakej, Add-on & Transportation Fees FS Pictures
+    const PRICING_DATA = {
+      weddingPackages: [
+        {
+          id: 'nikah_399',
+          name: 'Nikah',
+          duration: 'Max 3 Hours Indoor Session',
+          price: 399,
+          features: [
+            'Max 3 Hours Indoor Session',
+            'Fully Edited Photos & Unlimited Photos',
+            'Pendrive & Google Drive (All Photos)',
+            'Excludes Preparation / Make-up & Outdoor sessions'
+          ]
+        },
+        {
+          id: 'sanding_699',
+          name: 'Sanding / Tandang',
+          duration: 'Max 6 Hours Indoor Session',
+          price: 699,
+          features: [
+            'Max 6 Hours Indoor Session',
+            'Fully Edited Photos & Unlimited Photos',
+            'Pendrive & Google Drive (All Photos)',
+            'Excludes Preparation / Make-up & Outdoor sessions'
+          ]
+        },
+        {
+          id: 'nikah_sanding_single_799',
+          name: 'Nikah & Sanding (Single Day)',
+          duration: 'Indoor Session',
+          price: 799,
+          popular: true,
+          features: [
+            'Single Day Indoor Session',
+            'Fully Edited Photos & Unlimited Photos',
+            'Pendrive & Google Drive (All Photos)',
+            'Excludes Preparation / Make-up & Outdoor sessions'
+          ]
+        },
+        {
+          id: 'nikah_sanding_sep_899',
+          name: 'Nikah & Sanding (Separate Days)',
+          duration: 'Indoor Session',
+          price: 899,
+          features: [
+            'Separate Days Indoor Session',
+            'Fully Edited Photos & Unlimited Photos',
+            'Pendrive & Google Drive (All Photos)',
+            'Excludes Preparation / Make-up & Outdoor sessions'
+          ]
+        },
+        {
+          id: 'exc_single_1599',
+          name: 'Exclusive: Nikah & Sanding (Single Day)',
+          duration: 'Indoor Session',
+          price: 1599,
+          features: [
+            'Engraved Leather Album & Premium Case',
+            'Canvas Poster Frame',
+            'Fully Edited & Unlimited Photos',
+            'Pendrive & Google Drive (All Photos)',
+            'Excludes Preparation / Make-up & Outdoor sessions'
+          ]
+        },
+        {
+          id: 'exc_sep_1699',
+          name: 'Exclusive: Nikah & Sanding (Separate Days)',
+          duration: 'Indoor Session',
+          price: 1699,
+          features: [
+            'Engraved Leather Album & Premium Case',
+            'Canvas Poster Frame',
+            'Fully Edited & Unlimited Photos',
+            'Pendrive & Google Drive (All Photos)',
+            'Excludes Preparation / Make-up & Outdoor sessions'
+          ]
+        },
+        {
+          id: 'outdoor_portrait_300',
+          name: 'Outdoor Pre-Wedding / Pre-Convo / Maternity / Portraiture',
+          duration: '1 Hour Coverage',
+          price: 300,
+          features: [
+            '1 Hour Outdoor Session Coverage',
+            'Fully Edited High-Res Photos',
+            'Delivered via Google Drive'
+          ]
+        },
+        {
+          id: 'convo_250',
+          name: 'Convocation (Campus Outdoor)',
+          duration: '1 Hour Coverage Within Campus Outdoor Only',
+          price: 250,
+          features: [
+            '1 Hour Coverage (Within Campus Outdoor Only)',
+            'Fully Edited High-Res Photos',
+            'Delivered via Google Drive'
+          ]
+        }
+      ],
+      weddingAddons: [
+        { id: 'makeup_129', name: 'Preparation / Make-up Session', price: 129, desc: 'Coverage for bride & groom preparation / make-up session before the event' },
+        { id: 'outdoor_249', name: 'Outdoor Session (Max 2 Hours)', price: 249, desc: '1 couple outdoor portraiture session (maximum 2 hours)' },
+        { id: 'outdoor2_498', name: '2 Outdoor Sessions (Max 2 Hours Each)', price: 498, desc: '2 separate outdoor portraiture sessions (maximum 2 hours each)' },
+        { id: 'fireworks_199', name: 'Fireworks Session (Max 1 Hour)', price: 199, desc: 'Special night fireworks session coverage (maximum 1 hour)' }
+      ],
+      weddingOvertimeRate: 99,
+      locations: [
+        { id: 'tr_0', name: 'RM0 - (For selected package only)', price: 0, desc: 'No transportation charge (For selected packages only)' },
+        { id: 'tr_30', name: 'Zone A (RM30 / Day Trip)', price: 30, desc: 'Timur Laut, Seberang Perai & Kulim areas only' },
+        { id: 'tr_50', name: 'Zone B (RM50 / Day Trip)', price: 50, desc: 'Barat Daya, Sungai Petani & Kerian District areas' },
+        { id: 'tr_80', name: 'Zone C (RM80 / Day Trip)', price: 80, desc: 'Outstation / Outside listed areas' }
+      ]
+    };
+
+    // Komponen Ikon SVG Ringan
+    const IconCheck = ({ className = "w-3.5 h-3.5" }) => (
+      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="20 6 9 17 4 12" />
+      </svg>
+    );
+
+    const IconSparkles = ({ className = "w-3 h-3" }) => (
+      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3L12 3z" />
+      </svg>
+    );
+
+    const IconClock = ({ className = "w-3.5 h-3.5" }) => (
+      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <polyline points="12 6 12 12 16 14" />
+      </svg>
+    );
+
+    const IconMapPin = ({ className = "w-4 h-4" }) => (
+      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+        <circle cx="12" cy="10" r="3" />
+      </svg>
+    );
+
+    const IconCalendar = ({ className = "w-4 h-4" }) => (
+      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <rect width="18" height="18" x="3" y="4" rx="2" ry="2" />
+        <line x1="16" x2="16" y1="2" y2="6" />
+        <line x1="8" x2="8" y1="2" y2="6" />
+        <line x1="3" x2="21" y1="10" y2="10" />
+      </svg>
+    );
+
+    const IconRotateCcw = ({ className = "w-4 h-4" }) => (
+      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+        <path d="M3 3v5h5" />
+      </svg>
+    );
+
+    const IconPlus = ({ className = "w-4 h-4" }) => (
+      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="12" x2="12" y1="5" y2="19" />
+        <line x1="5" x2="19" y1="12" y2="12" />
+      </svg>
+    );
+
+    const IconMinus = ({ className = "w-4 h-4" }) => (
+      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="5" x2="19" y1="12" y2="12" />
+      </svg>
+    );
+
+    const IconWhatsApp = ({ className = "w-4 h-4" }) => (
+      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
+      </svg>
+    );
+
+    const IconVolumeOn = ({ className = "w-4 h-4" }) => (
+      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+        <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+        <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+      </svg>
+    );
+
+    const IconVolumeMute = ({ className = "w-4 h-4" }) => (
+      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+        <line x1="23" x2="17" y1="9" y2="15" />
+        <line x1="17" x2="23" y1="9" y2="15" />
+      </svg>
+    );
+
+    function App() {
+      const [bookedDates, setBookedDates] = useState(DEFAULT_BOOKED_DATES);
+      const [isMusicPlaying, setIsMusicPlaying] = useState(false);
+
+      const [selectedWeddingPkg, setSelectedWeddingPkg] = useState('nikah_sanding_single_799');
+      const [selectedWeddingAddons, setSelectedWeddingAddons] = useState([]);
+      const [weddingOvertimeHours, setWeddingOvertimeHours] = useState(0);
+
+      const [selectedLocation, setSelectedLocation] = useState('tr_30');
+      const [tripDays, setTripDays] = useState(1);
+
+      const [eventDate, setEventDate] = useState('');
+      const [eventDate2, setEventDate2] = useState('');
+      const [eventLocation, setEventLocation] = useState('');
+      const [eventLocation2, setEventLocation2] = useState('');
+
+      const [availabilityResult, setAvailabilityResult] = useState(null);
+      const [clientName, setClientName] = useState('');
+      const [clientPhone, setClientPhone] = useState('');
+      const [clientInstagram, setClientInstagram] = useState('');
+      const [agreedToTnC, setAgreedToTnC] = useState(false);
+      const [clientFormError, setClientFormError] = useState('');
+
+      const summaryRef = React.useRef(null);
+
+      // Muat turun tarikh booked terus dari Google Sheets CSV
+      useEffect(() => {
+        if (!GOOGLE_SHEETS_CSV_URL) return;
+        fetch(GOOGLE_SHEETS_CSV_URL)
+          .then(res => res.text())
+          .then(csvText => {
+            const lines = csvText.split(/\r?\n/);
+            const parsedDates = [];
+            lines.forEach(line => {
+              const firstCol = line.split(',')[0];
+              const normalized = normalizeSheetDate(firstCol);
+              if (normalized) parsedDates.push(normalized);
+            });
+            setBookedDates(Array.from(new Set(parsedDates)));
+          })
+          .catch(() => {});
+      }, []);
+
+      // Segerakkan status muzik latar belakang
+      useEffect(() => {
+        const audio = document.getElementById('fs-bgm-audio');
+        if (audio && !audio.paused) {
+          setIsMusicPlaying(true);
+        }
+        const onStarted = () => setIsMusicPlaying(true);
+        window.addEventListener('fs-audio-started', onStarted);
+        return () => window.removeEventListener('fs-audio-started', onStarted);
+      }, []);
+
+      const toggleBackgroundMusic = () => {
+        const audio = document.getElementById('fs-bgm-audio');
+        if (!audio) return;
+        if (isMusicPlaying) {
+          audio.pause();
+          window.__fsUserMuted = true;
+          setIsMusicPlaying(false);
+        } else {
+          window.__fsUserMuted = false;
+          audio.volume = 0.4;
+          audio.play().then(() => {
+            window.__fsAudioStarted = true;
+            setIsMusicPlaying(true);
+          }).catch(() => {});
+        }
+      };
+
+      const isSeparateDaysPkg = useMemo(() => {
+        return selectedWeddingPkg === 'nikah_sanding_sep_899' || selectedWeddingPkg === 'exc_sep_1699';
+      }, [selectedWeddingPkg]);
+
+      const handleSelectPackage = (pkgId) => {
+        setSelectedWeddingPkg(pkgId);
+        const isSep = pkgId === 'nikah_sanding_sep_899' || pkgId === 'exc_sep_1699';
+        if (isSep) {
+          setTripDays(2);
+        } else {
+          setTripDays(1);
+          setSelectedWeddingAddons(prev => prev.filter(item => item !== 'outdoor2_498'));
+        }
+      };
+
+      const toggleAddon = (id) => {
+        setSelectedWeddingAddons(prev => {
+          if (prev.includes(id)) {
+            return prev.filter(item => item !== id);
+          }
+          let next = [...prev, id];
+          if (id === 'outdoor_249') {
+            next = next.filter(item => item !== 'outdoor2_498');
+          } else if (id === 'outdoor2_498') {
+            next = next.filter(item => item !== 'outdoor_249');
+          }
+          return next;
+        });
+      };
+
+      const resetAll = () => {
+        setSelectedWeddingPkg('nikah_sanding_single_799');
+        setSelectedWeddingAddons([]);
+        setWeddingOvertimeHours(0);
+        setSelectedLocation('tr_30');
+        setTripDays(1);
+        setEventDate('');
+        setEventDate2('');
+        setEventLocation('');
+        setEventLocation2('');
+        setClientName('');
+        setClientPhone('');
+        setClientInstagram('');
+        setAgreedToTnC(false);
+        setClientFormError('');
+        setAvailabilityResult(null);
+      };
+
+      const updateDatePart = (currentIso, part, value, setter) => {
+        const parts = currentIso ? currentIso.split('-') : ['2027', '01', '01'];
+        let [y, m, d] = parts.length === 3 ? parts : ['2027', '01', '01'];
+        if (part === 'year') y = value;
+        if (part === 'month') m = value;
+        if (part === 'day') d = value;
+        setter(`${y}-${m}-${d}`);
+        setAvailabilityResult(null);
+        setAgreedToTnC(false);
+      };
+
+      const handleCheckAvailability = () => {
+        if (!eventDate || !eventLocation.trim() || (isSeparateDaysPkg && (!eventDate2 || !eventLocation2.trim()))) {
+          setAvailabilityResult({
+            status: 'missing',
+            message: 'Please fill in both your Event Date and Event Location in Section 4 before checking availability.'
+          });
+          return;
+        }
+
+        const isDate1Booked = bookedDates.includes(eventDate);
+        const isDate2Booked = isSeparateDaysPkg && eventDate2 ? bookedDates.includes(eventDate2) : false;
+
+        if (isDate1Booked || isDate2Booked) {
+          const clashedDate = isDate1Booked ? formatReadableDate(eventDate) : formatReadableDate(eventDate2);
+          setAvailabilityResult({
+            status: 'booked',
+            message: `Sorry, the date ${clashedDate} is already booked in FS Pictures' calendar. Please choose another date.`
+          });
+          setAgreedToTnC(false);
+        } else {
+          const formattedD1 = formatReadableDate(eventDate);
+          const formattedD2 = isSeparateDaysPkg && eventDate2 ? ` & ${formatReadableDate(eventDate2)}` : '';
+          setAvailabilityResult({
+            status: 'available',
+            message: `Good news! Your selected date (${formattedD1}${formattedD2}) is AVAILABLE.`
+          });
+        }
+      };
+
+      const calculation = useMemo(() => {
+        const basePkg = PRICING_DATA.weddingPackages.find(p => p.id === selectedWeddingPkg) || PRICING_DATA.weddingPackages[0];
+        const basePrice = basePkg.price;
+        const addonsList = PRICING_DATA.weddingAddons.filter(a => selectedWeddingAddons.includes(a.id));
+        const overtimeHours = weddingOvertimeHours;
+        const overtimeRate = PRICING_DATA.weddingOvertimeRate;
+
+        const addonsTotal = addonsList.reduce((sum, item) => sum + item.price, 0);
+        const overtimeTotal = overtimeHours * overtimeRate;
+        const locationObj = PRICING_DATA.locations.find(l => l.id === selectedLocation) || PRICING_DATA.locations[0];
+        const locationUnitRate = locationObj.price;
+        const locationDiscount = (locationUnitRate > 0 && tripDays >= 2) ? 10 : 0;
+        const locationCharge = locationUnitRate === 0 ? 0 : (locationUnitRate * tripDays) - locationDiscount;
+
+        const grandTotal = basePrice + addonsTotal + overtimeTotal + locationCharge;
+
+        return {
+          basePkg,
+          basePrice,
+          addonsList,
+          addonsTotal,
+          overtimeHours,
+          overtimeRate,
+          overtimeTotal,
+          locationObj,
+          locationUnitRate,
+          tripDays,
+          locationDiscount,
+          locationCharge,
+          grandTotal
+        };
+      }, [selectedWeddingPkg, selectedWeddingAddons, weddingOvertimeHours, selectedLocation, tripDays]);
+
+      const formatRM = (num) => {
+        return new Intl.NumberFormat('ms-MY', {
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 0
+        }).format(num);
+      };
+
+      const generateWhatsAppText = () => {
+        const pkgTitle = `${calculation.basePkg.name} (${calculation.basePkg.duration})`;
+
+        let text = `*OFFICIAL QUOTATION - FS PICTURES*\n`;
+        text += `_by Firdaus Shah - Wedding Investment_\n`;
+        text += `----------------------------------------\n`;
+        if (clientName.trim() || clientPhone.trim() || clientInstagram.trim()) {
+          text += `*CLIENT DETAILS:*\n`;
+          if (clientName.trim()) text += `Name: ${clientName.trim()}\n`;
+          if (clientPhone.trim()) text += `Phone: ${clientPhone.trim()}\n`;
+          if (clientInstagram.trim()) text += `Instagram: ${clientInstagram.trim()}\n`;
+          text += `\n`;
+        }
+        if (isSeparateDaysPkg) {
+          if (eventDate || eventLocation) {
+            text += `*DAY 1 (NIKAH)*\n`;
+            if (eventDate) text += `Date: ${formatReadableDate(eventDate)}\n`;
+            if (eventLocation) text += `Location: ${eventLocation}\n\n`;
+          }
+          if (eventDate2 || eventLocation2) {
+            text += `*DAY 2 (SANDING / TANDANG)*\n`;
+            if (eventDate2) text += `Date: ${formatReadableDate(eventDate2)}\n`;
+            if (eventLocation2) text += `Location: ${eventLocation2}\n\n`;
+          }
+        } else {
+          if (eventDate) text += `*Event Date:* ${formatReadableDate(eventDate)}\n`;
+          if (eventLocation) text += `*Event Location:* ${eventLocation}\n\n`;
+        }
+
+        text += `*PACKAGE & ITEM DETAILS:*\n`;
+        text += `1. *${pkgTitle}* - RM ${formatRM(calculation.basePrice)}\n`;
+
+        let itemIndex = 2;
+        calculation.addonsList.forEach(addon => {
+          text += `${itemIndex}. ${addon.name} - RM ${formatRM(addon.price)}\n`;
+          itemIndex++;
+        });
+
+        if (calculation.overtimeHours > 0) {
+          text += `${itemIndex}. Add-on Hours (${calculation.overtimeHours} Hours x RM ${calculation.overtimeRate}) - RM ${formatRM(calculation.overtimeTotal)}\n`;
+          itemIndex++;
+        }
+
+        if (calculation.locationUnitRate === 0) {
+          text += `${itemIndex}. Transportation Fees: ${calculation.locationObj.name} - RM 0\n`;
+        } else {
+          const normalTwoDay = calculation.locationUnitRate * calculation.tripDays;
+          const discNote = calculation.locationDiscount > 0
+            ? ` (2 Day Trip: Normal RM${normalTwoDay} - RM10 Discount)`
+            : ` (1 Day Trip)`;
+          text += `${itemIndex}. Transportation Fees: ${calculation.locationObj.desc}${discNote} - RM ${formatRM(calculation.locationCharge)}\n`;
+        }
+
+        text += `----------------------------------------\n`;
+        text += `*TOTAL INVESTMENT: RM ${formatRM(calculation.grandTotal)}*\n`;
+        text += `----------------------------------------\n\n`;
+
+        text += `Hi *FS Pictures*, I am interested in booking the package above for our upcoming event (I have read & agreed to the Terms & Conditions). Kindly let me know how we can proceed.`;
+        return text;
+      };
+
+      const logLeadToGoogleSheets = () => {
+        if (!GOOGLE_SHEETS_WEBHOOK_URL) return;
+        const addonsItems = calculation.addonsList.map(a => a.name);
+        if (calculation.overtimeHours > 0) {
+          addonsItems.push(`Extra Hours (${calculation.overtimeHours}h)`);
+        }
+
+        const payload = {
+          eventDate: eventDate,
+          eventLocation: eventLocation.trim(),
+          eventDate2: isSeparateDaysPkg ? eventDate2 : '',
+          eventLocation2: isSeparateDaysPkg ? eventLocation2.trim() : '-',
+          clientName: clientName.trim(),
+          clientPhone: clientPhone.trim(),
+          clientInstagram: clientInstagram.trim() || '-',
+          packageName: calculation.basePkg.name,
+          addonsSummary: addonsItems.length > 0 ? addonsItems.join(', ') : '-',
+          transportation: calculation.locationObj.name,
+          totalInvestment: calculation.grandTotal
+        };
+
+        try {
+          fetch(GOOGLE_SHEETS_WEBHOOK_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(payload)
+          }).catch(() => {});
+        } catch (err) {}
+      };
+
+      const handleDirectWhatsApp = () => {
+        if (!clientName.trim() || !clientPhone.trim()) {
+          setClientFormError('Please enter your Name and Phone Number before proceeding to WhatsApp.');
+          return;
+        }
+        if (!agreedToTnC) {
+          setClientFormError('Sila tanda kotak persetujuan Terma & Syarat Perkhidmatan sebelum meneruskan.');
+          return;
+        }
+        setClientFormError('');
+        logLeadToGoogleSheets();
+        const text = encodeURIComponent(generateWhatsAppText());
+        window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${text}`, '_blank', 'noopener,noreferrer');
+      };
+
+      const scrollToSummary = () => {
+        if (summaryRef.current) {
+          summaryRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      };
+
+      return (
+        <div className="min-h-screen bg-zinc-950 text-zinc-100">
+          {/* HEADER UTAMA */}
+          <header className="border-b border-zinc-800/80 bg-zinc-900/75 backdrop-blur-md sticky top-0 z-30">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 sm:py-4 flex items-center justify-between gap-3">
+              <div>
+                <h1 className="text-lg sm:text-2xl font-bold tracking-tight text-white">
+                  FS PICTURES
+                </h1>
+                <p className="text-[11px] sm:text-sm text-zinc-400">
+                  by Firdaus Shah - Wedding Investment
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={toggleBackgroundMusic}
+                  className={`px-3 py-2 rounded-xl text-xs font-medium border flex items-center gap-1.5 transition-colors ${
+                    isMusicPlaying
+                      ? 'bg-amber-500/15 text-amber-300 border-amber-500/40'
+                      : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white'
+                  }`}
+                  title={isMusicPlaying ? 'Mute Background Music' : 'Play Background Music'}
+                >
+                  {isMusicPlaying ? <IconVolumeOn className="w-3.5 h-3.5" /> : <IconVolumeMute className="w-3.5 h-3.5" />}
+                  <span className="hidden sm:inline">{isMusicPlaying ? 'Music On' : 'Music Off'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={resetAll}
+                  className="px-3 py-2 rounded-xl text-xs sm:text-sm font-medium bg-zinc-900 text-zinc-400 border border-zinc-800 hover:text-white hover:border-zinc-700 flex items-center gap-1.5 transition-colors"
+                  title="Reset Selections"
+                >
+                  <IconRotateCcw className="w-3.5 h-3.5" />
+                  <span>Reset</span>
+                </button>
+              </div>
+            </div>
+          </header>
+
+          <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
+              
+              {/* LEFT COLUMN: PACKAGE SELECTION & EVENT DETAILS (7 COLUMNS) */}
+              <div className="lg:col-span-7 space-y-5 sm:space-y-6">
+
+                {/* 1. PACKAGE SELECTION */}
+                <section className="bg-zinc-900/70 border border-zinc-800/90 rounded-2xl p-4 sm:p-6 space-y-4">
+                  <div>
+                    <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 text-xs flex items-center justify-center font-bold border border-amber-500/30">1</span>
+                      Package (Wedding Investment)
+                    </h2>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
+                    {PRICING_DATA.weddingPackages.map((pkg) => {
+                      const isSelected = selectedWeddingPkg === pkg.id;
+
+                      return (
+                        <div
+                          key={pkg.id}
+                          onClick={() => handleSelectPackage(pkg.id)}
+                          className={`relative rounded-xl p-4 cursor-pointer transition-all border flex flex-col justify-between ${
+                            isSelected
+                              ? 'bg-gradient-to-b from-amber-500/15 to-zinc-900 border-amber-500 shadow-lg shadow-amber-500/10'
+                              : 'bg-zinc-950/60 border-zinc-800/80 hover:border-zinc-700'
+                          }`}
+                        >
+                          {pkg.popular && (
+                            <span className="absolute -top-2.5 right-3 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500 text-zinc-950 flex items-center gap-1 shadow">
+                              <IconSparkles className="w-3 h-3" /> Best Seller
+                            </span>
+                          )}
+
+                          <div>
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <h3 className="font-bold text-white text-sm sm:text-base leading-snug">{pkg.name}</h3>
+                                <span className="inline-flex items-center gap-1 text-xs text-amber-400/90 font-medium mt-0.5">
+                                  <IconClock className="w-3 h-3" /> {pkg.duration}
+                                </span>
+                              </div>
+                              <div className={`w-5 h-5 rounded-full border flex items-center justify-center mt-0.5 shrink-0 ${
+                                isSelected ? 'border-amber-400 bg-amber-400 text-zinc-950' : 'border-zinc-700'
+                              }`}>
+                                {isSelected && <IconCheck className="w-3.5 h-3.5" />}
+                              </div>
+                            </div>
+
+                            <ul className="mt-3 space-y-1.5 border-t border-zinc-800/80 pt-3">
+                              {pkg.features.map((feat, idx) => {
+                                const isExcludeAlert = feat.includes('Excludes Preparation / Make-up & Outdoor sessions');
+                                return (
+                                  <li
+                                    key={idx}
+                                    className={`text-xs flex items-start gap-1.5 ${
+                                      isExcludeAlert ? 'text-red-400 font-bold' : 'text-zinc-300'
+                                    }`}
+                                  >
+                                    <span className={`${isExcludeAlert ? 'text-red-400 font-bold' : 'text-amber-400'} mt-0.5`}>•</span>
+                                    <span>{feat}</span>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          </div>
+
+                          <div className="mt-4 pt-3 border-t border-zinc-800/80 flex items-baseline justify-between">
+                            <span className="text-xs text-zinc-400">Package Price</span>
+                            <span className="text-lg font-extrabold text-amber-400">
+                              RM {formatRM(pkg.price)}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+
+                {/* 2. ADD-ON PACKAGE & EXTRA HOURS */}
+                <section className="bg-zinc-900/70 border border-sky-900/40 rounded-2xl p-4 sm:p-6 space-y-4 sm:space-y-5">
+                  <div>
+                    <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-full bg-sky-500/20 text-sky-400 text-xs flex items-center justify-center font-bold border border-sky-500/30">2</span>
+                      Add-On Package
+                    </h2>
+                    <p className="text-xs sm:text-sm text-zinc-400 mt-0.5">
+                      Optional add-ons for Make-up, Outdoor, Fireworks, or Extra Hours
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {PRICING_DATA.weddingAddons
+                      .filter(addon => addon.id !== 'outdoor2_498' || isSeparateDaysPkg)
+                      .map((addon) => {
+                      const isChecked = selectedWeddingAddons.includes(addon.id);
+
+                      return (
+                        <div
+                          key={addon.id}
+                          onClick={() => toggleAddon(addon.id)}
+                          className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-start justify-between gap-3 ${
+                            isChecked
+                              ? 'bg-sky-500/10 border-sky-500/70 text-white shadow-md shadow-sky-500/5'
+                              : 'bg-zinc-950/60 border-zinc-800/80 text-zinc-300 hover:border-sky-500/40'
+                          }`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className={`w-5 h-5 rounded-md border flex items-center justify-center mt-0.5 shrink-0 ${
+                              isChecked ? 'bg-sky-400 border-sky-400 text-zinc-950' : 'border-zinc-700 bg-zinc-900'
+                            }`}>
+                              {isChecked && <IconCheck className="w-3.5 h-3.5" />}
+                            </div>
+                            <div>
+                              <h4 className="text-xs sm:text-sm font-semibold text-white leading-snug">{addon.name}</h4>
+                              <p className="text-[11px] text-zinc-400 mt-0.5">{addon.desc}</p>
+                            </div>
+                          </div>
+
+                          <div className="shrink-0 text-right">
+                            <span className="text-xs sm:text-sm font-bold text-sky-400">
+                              +RM {formatRM(addon.price)}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Add-on Hours Counter */}
+                  <div className="p-4 rounded-xl bg-zinc-950/80 border border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+                        <IconClock className="w-4 h-4 text-sky-400" />
+                        Add-on Hours (Extra Hours)
+                      </h4>
+                      <div className="text-xs text-zinc-400 mt-0.5 flex items-center gap-1.5">
+                        <span>Charged when next hour starts:</span>
+                        <span className="text-sky-400 font-semibold">
+                          RM {formatRM(PRICING_DATA.weddingOvertimeRate)} / hour
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 self-end sm:self-center">
+                      <button
+                        type="button"
+                        onClick={() => setWeddingOvertimeHours(Math.max(0, weddingOvertimeHours - 1))}
+                        className="w-10 h-10 rounded-xl bg-zinc-800 hover:bg-zinc-700 active:scale-95 text-white flex items-center justify-center transition-all border border-zinc-700"
+                      >
+                        <IconMinus className="w-4 h-4" />
+                      </button>
+                      <div className="min-w-[4rem] text-center">
+                        <span className="text-base font-bold text-white">{weddingOvertimeHours}</span>
+                        <span className="text-xs text-zinc-400 block">Hours</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setWeddingOvertimeHours(weddingOvertimeHours + 1)}
+                        className="w-10 h-10 rounded-xl bg-sky-400 hover:bg-sky-300 active:scale-95 text-zinc-950 flex items-center justify-center transition-all font-bold"
+                      >
+                        <IconPlus className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </section>
+
+                {/* 3. TRANSPORTATION FEES */}
+                <section className="bg-zinc-900/70 border border-teal-900/40 rounded-2xl p-4 sm:p-6 space-y-4">
+                  <div>
+                    <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-full bg-teal-500/20 text-teal-400 text-xs flex items-center justify-center font-bold border border-teal-500/30">3</span>
+                      Transportation Fees
+                    </h2>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {PRICING_DATA.locations.map((loc) => {
+                      const isSelected = selectedLocation === loc.id;
+                      const zoneDiscount = (loc.price > 0 && tripDays >= 2) ? 10 : 0;
+                      const normalZoneTotal = loc.price * tripDays;
+                      const calculatedZoneTotal = loc.price === 0 ? 0 : normalZoneTotal - zoneDiscount;
+                      return (
+                        <div
+                          key={loc.id}
+                          onClick={() => setSelectedLocation(loc.id)}
+                          className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-center justify-between gap-3 ${
+                            isSelected
+                              ? 'bg-teal-500/15 border-teal-400 text-white shadow-md shadow-teal-500/5'
+                              : 'bg-zinc-950/60 border-zinc-800/80 text-zinc-300 hover:border-teal-500/40'
+                          }`}
+                        >
+                          <div className="flex items-start gap-2.5">
+                            <IconMapPin className={`w-4 h-4 mt-0.5 shrink-0 ${isSelected ? 'text-teal-400' : 'text-zinc-500'}`} />
+                            <div>
+                              <h4 className="text-xs sm:text-sm font-semibold text-white">{loc.name}</h4>
+                              <p className="text-[11px] text-zinc-400">{loc.desc}</p>
+                            </div>
+                          </div>
+
+                          <div className="shrink-0 text-right">
+                            <span className={`text-xs sm:text-sm font-bold block ${loc.price === 0 ? 'text-emerald-400' : 'text-teal-400'}`}>
+                              {loc.price === 0 ? 'RM 0' : `+RM ${formatRM(calculatedZoneTotal)}`}
+                            </span>
+                            {loc.price > 0 && (
+                              <span className="text-[10px] text-zinc-400 block">
+                                {tripDays === 1
+                                  ? `1 Day Trip (RM${loc.price})`
+                                  : `2 Day Trip: RM${normalZoneTotal} - RM10 Discount`}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+
+                {/* 4. EVENT DATE & LOCATION SELECTION */}
+                <section className="bg-zinc-900/70 border border-zinc-800/90 rounded-2xl p-4 sm:p-6 space-y-4 sm:space-y-5">
+                  <div>
+                    <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 text-xs flex items-center justify-center font-bold border border-amber-500/30">4</span>
+                      Select Event Date & Location
+                    </h2>
+                    <p className="text-xs sm:text-sm text-zinc-400 mt-0.5">
+                      Fill in your event date and location (required) to check our slot availability
+                    </p>
+                  </div>
+
+                  <div className="space-y-4">
+                    {/* Day 1 Date & Location */}
+                    <div className="space-y-3 p-4 rounded-xl bg-zinc-950/60 border border-zinc-800/80">
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-300 mb-1.5">
+                          {isSeparateDaysPkg ? 'Event Date 1 (Nikah)*' : 'Event Date*'}
+                        </label>
+                        <div className="grid grid-cols-3 gap-2">
+                          <select
+                            value={eventDate ? eventDate.split('-')[2] : ''}
+                            onChange={(e) => updateDatePart(eventDate, 'day', e.target.value, setEventDate)}
+                            className="bg-zinc-950 border border-zinc-800 rounded-xl px-2.5 py-2.5 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-500"
+                          >
+                            <option value="" disabled>Day</option>
+                            {DAYS_LIST.map(d => (
+                              <option key={d} value={d}>{parseInt(d, 10)}</option>
+                            ))}
+                          </select>
+
+                          <select
+                            value={eventDate ? eventDate.split('-')[1] : ''}
+                            onChange={(e) => updateDatePart(eventDate, 'month', e.target.value, setEventDate)}
+                            className="bg-zinc-950 border border-zinc-800 rounded-xl px-2.5 py-2.5 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-500"
+                          >
+                            <option value="" disabled>Month</option>
+                            {MONTHS_LIST.map(m => (
+                              <option key={m.value} value={m.value}>{m.label}</option>
+                            ))}
+                          </select>
+
+                          <select
+                            value={eventDate ? eventDate.split('-')[0] : ''}
+                            onChange={(e) => updateDatePart(eventDate, 'year', e.target.value, setEventDate)}
+                            className="bg-zinc-950 border border-zinc-800 rounded-xl px-2.5 py-2.5 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-500"
+                          >
+                            <option value="" disabled>Year</option>
+                            {YEARS_LIST.map(y => (
+                              <option key={y} value={y}>{y}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-300 mb-1.5">
+                          {isSeparateDaysPkg ? 'Event Location 1 (Nikah)*' : 'Event Location / Area*'}
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g., Masjid Abdullah Fahim, Kepala Batas"
+                          value={eventLocation}
+                          onChange={(e) => {
+                            setEventLocation(e.target.value);
+                            if (availabilityResult?.status === 'missing') setAvailabilityResult(null);
+                          }}
+                          className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-500"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Day 2 Date & Location */}
+                    {isSeparateDaysPkg && (
+                      <div className="space-y-3 p-4 rounded-xl bg-zinc-950/60 border border-amber-500/30">
+                        <div>
+                          <label className="block text-xs font-medium text-amber-400 mb-1.5">
+                            Event Date 2 (Sanding / Tandang)*
+                          </label>
+                          <div className="grid grid-cols-3 gap-2">
+                            <select
+                              value={eventDate2 ? eventDate2.split('-')[2] : ''}
+                              onChange={(e) => updateDatePart(eventDate2, 'day', e.target.value, setEventDate2)}
+                              className="bg-zinc-950 border border-amber-500/40 rounded-xl px-2.5 py-2.5 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-500"
+                            >
+                              <option value="" disabled>Day</option>
+                              {DAYS_LIST.map(d => (
+                                <option key={d} value={d}>{parseInt(d, 10)}</option>
+                              ))}
+                            </select>
+
+                            <select
+                              value={eventDate2 ? eventDate2.split('-')[1] : ''}
+                              onChange={(e) => updateDatePart(eventDate2, 'month', e.target.value, setEventDate2)}
+                              className="bg-zinc-950 border border-amber-500/40 rounded-xl px-2.5 py-2.5 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-500"
+                            >
+                              <option value="" disabled>Month</option>
+                              {MONTHS_LIST.map(m => (
+                                <option key={m.value} value={m.value}>{m.label}</option>
+                              ))}
+                            </select>
+
+                            <select
+                              value={eventDate2 ? eventDate2.split('-')[0] : ''}
+                              onChange={(e) => updateDatePart(eventDate2, 'year', e.target.value, setEventDate2)}
+                              className="bg-zinc-950 border border-amber-500/40 rounded-xl px-2.5 py-2.5 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-500"
+                            >
+                              <option value="" disabled>Year</option>
+                              {YEARS_LIST.map(y => (
+                                <option key={y} value={y}>{y}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-amber-400 mb-1.5">
+                            Event Location 2 (Sanding / Tandang)*
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="e.g., The Light Hotel, Seberang Jaya"
+                            value={eventLocation2}
+                            onChange={(e) => {
+                              setEventLocation2(e.target.value);
+                              if (availabilityResult?.status === 'missing') setAvailabilityResult(null);
+                            }}
+                            className="w-full bg-zinc-950 border border-amber-500/40 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-500"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </section>
+              </div>
+
+              {/* RIGHT COLUMN: LIVE QUOTATION SUMMARY PANEL (5 COLUMNS) */}
+              <div ref={summaryRef} className="lg:col-span-5 lg:sticky lg:top-24 scroll-mt-20">
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl">
+                  
+                  {/* Quotation Header */}
+                  <div className="bg-gradient-to-br from-zinc-900 via-zinc-900 to-amber-950/30 p-5 sm:p-6 border-b border-zinc-800">
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-amber-400 block">
+                      Official Quotation Summary
+                    </span>
+                    <h3 className="text-xl font-bold text-white mt-0.5">
+                      FS PICTURES
+                    </h3>
+                    <p className="text-xs text-zinc-400">
+                      by Firdaus Shah - Wedding Investment
+                    </p>
+
+                    {(eventDate || eventLocation || (isSeparateDaysPkg && (eventDate2 || eventLocation2))) && (
+                      <div className="mt-4 pt-4 border-t border-zinc-800/80 space-y-2 text-xs">
+                        {isSeparateDaysPkg ? (
+                          <>
+                            {(eventDate || eventLocation) && (
+                              <div>
+                                {eventDate && (
+                                  <div className="flex justify-between">
+                                    <span className="text-zinc-400">Day 1 (Nikah):</span>
+                                    <span className="font-semibold text-white">{formatReadableDate(eventDate)}</span>
+                                  </div>
+                                )}
+                                {eventLocation && (
+                                  <div className="text-[11px] text-zinc-400 truncate">Location: {eventLocation}</div>
+                                )}
+                              </div>
+                            )}
+                            {(eventDate2 || eventLocation2) && (
+                              <div className="pt-1.5 border-t border-zinc-800/50">
+                                {eventDate2 && (
+                                  <div className="flex justify-between">
+                                    <span className="text-zinc-400">Day 2 (Sanding):</span>
+                                    <span className="font-semibold text-amber-400">{formatReadableDate(eventDate2)}</span>
+                                  </div>
+                                )}
+                                {eventLocation2 && (
+                                  <div className="text-[11px] text-zinc-400 truncate">Location: {eventLocation2}</div>
+                                )}
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          (eventDate || eventLocation) && (
+                            <div>
+                              {eventDate && (
+                                <div className="flex justify-between">
+                                  <span className="text-zinc-400">Event Date:</span>
+                                  <span className="font-semibold text-white">{formatReadableDate(eventDate)}</span>
+                                </div>
+                              )}
+                              {eventLocation && (
+                                <div className="text-[11px] text-zinc-400 truncate">Location: {eventLocation}</div>
+                              )}
+                            </div>
+                          )
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Price Items List */}
+                  <div className="p-5 sm:p-6 space-y-4">
+                    <div className="space-y-3">
+                      <div className="flex items-start justify-between gap-3 pb-3 border-b border-zinc-800/70">
+                        <div>
+                          <span className="text-xs uppercase tracking-wider text-amber-400 font-semibold block">
+                            Selected Package
+                          </span>
+                          <h4 className="text-sm font-bold text-white mt-0.5">
+                            {calculation.basePkg.name}
+                          </h4>
+                          <p className="text-xs text-zinc-400">
+                            {calculation.basePkg.duration}
+                          </p>
+                        </div>
+                        <span className="text-sm font-bold text-white shrink-0">
+                          RM {formatRM(calculation.basePrice)}
+                        </span>
+                      </div>
+
+                      {calculation.addonsList.length > 0 && (
+                        <div className="space-y-2 pb-3 border-b border-zinc-800/70">
+                          <span className="text-xs uppercase tracking-wider text-sky-400 font-semibold block">
+                            Add-On Package
+                          </span>
+                          {calculation.addonsList.map((item) => (
+                            <div key={item.id} className="flex items-start justify-between gap-3 text-xs sm:text-sm">
+                              <span className="text-zinc-300">{item.name}</span>
+                              <span className="font-semibold text-white shrink-0">
+                                RM {formatRM(item.price)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {calculation.overtimeHours > 0 && (
+                        <div className="flex items-center justify-between gap-3 pb-3 border-b border-zinc-800/70 text-xs sm:text-sm">
+                          <div>
+                            <span className="text-zinc-300 block">Add-on Hours (Extra Hours)</span>
+                            <span className="text-xs text-zinc-500">
+                              {calculation.overtimeHours} Hours x RM {calculation.overtimeRate}
+                            </span>
+                          </div>
+                          <span className="font-semibold text-white">
+                            RM {formatRM(calculation.overtimeTotal)}
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between gap-3 pb-3 border-b border-zinc-800/70 text-xs sm:text-sm">
+                        <div>
+                          <span className="text-zinc-300 block">Transportation Fees</span>
+                          <span className="text-xs text-teal-400 font-medium block">
+                            {calculation.locationUnitRate === 0
+                              ? calculation.locationObj.name
+                              : calculation.tripDays === 1
+                              ? `${calculation.locationObj.name} (1 Day Trip)`
+                              : `${calculation.locationObj.name} (2 Day Trip)`}
+                          </span>
+                          <span className="text-[11px] text-zinc-500 block">
+                            {calculation.locationObj.desc}
+                            {calculation.locationDiscount > 0 && (
+                              <span className="text-emerald-400 font-semibold ml-1">
+                                (Normal RM{calculation.locationUnitRate * calculation.tripDays} - RM10 Discount)
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                        <span className="font-semibold text-white shrink-0">
+                          RM {formatRM(calculation.locationCharge)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Grand Total */}
+                    <div className="p-4 rounded-xl bg-gradient-to-r from-amber-500/20 via-amber-500/10 to-zinc-950 border border-amber-500/40 flex items-center justify-between">
+                      <div>
+                        <span className="text-xs uppercase tracking-wider font-bold text-amber-400 block">
+                          TOTAL INVESTMENT
+                        </span>
+                        <span className="text-[11px] text-zinc-400">
+                          Net Package Price
+                        </span>
+                      </div>
+                      <span className="text-2xl sm:text-3xl font-extrabold text-amber-400">
+                        RM {formatRM(calculation.grandTotal)}
+                      </span>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="pt-2 space-y-2.5">
+                      <button
+                        type="button"
+                        onClick={handleCheckAvailability}
+                        className="w-full py-3.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-[0.99] text-zinc-950 font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-amber-500/20"
+                      >
+                        <IconCalendar className="w-4 h-4" />
+                        <span>Check Date Availability</span>
+                      </button>
+
+                      {availabilityResult && (
+                        <div className={`p-4 rounded-xl border text-xs space-y-3 ${
+                          availabilityResult.status === 'available'
+                            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'
+                            : availabilityResult.status === 'booked'
+                            ? 'bg-red-500/10 border-red-500/30 text-red-300'
+                            : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                        }`}>
+                          <p className="font-bold text-sm leading-relaxed">{availabilityResult.message}</p>
+
+                          {availabilityResult.status === 'available' && (
+                            <div className="space-y-3 pt-2 border-t border-emerald-500/20">
+                              <div>
+                                <label className="block text-xs font-semibold text-emerald-200 mb-1.5">
+                                  Client Name*
+                                </label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g., Nurul Izzati"
+                                  value={clientName}
+                                  onChange={(e) => {
+                                    setClientName(e.target.value);
+                                    if (clientFormError) setClientFormError('');
+                                  }}
+                                  className="w-full bg-zinc-950/90 border border-emerald-500/30 rounded-xl px-3.5 py-3 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-400"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-semibold text-emerald-200 mb-1.5">
+                                  Phone Number (WhatsApp)*
+                                </label>
+                                <input
+                                  type="tel"
+                                  placeholder="e.g., 012-3456789"
+                                  value={clientPhone}
+                                  onChange={(e) => {
+                                    setClientPhone(e.target.value);
+                                    if (clientFormError) setClientFormError('');
+                                  }}
+                                  className="w-full bg-zinc-950/90 border border-emerald-500/30 rounded-xl px-3.5 py-3 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-400"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-semibold text-emerald-200 mb-1.5">
+                                  Instagram Account <span className="text-emerald-300/70 font-normal">(for tagging purpose)</span>
+                                </label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g., @nurulizzati"
+                                  value={clientInstagram}
+                                  onChange={(e) => setClientInstagram(e.target.value)}
+                                  className="w-full bg-zinc-950/90 border border-emerald-500/30 rounded-xl px-3.5 py-3 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-400"
+                                />
+                              </div>
+
+                              {/* TERMA & SYARAT PERKHIDMATAN (ASAL) */}
+                              <div className="p-3.5 rounded-xl bg-zinc-950/95 border border-emerald-500/30 space-y-2.5">
+                                <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
+                                  <h4 className="text-[11px] uppercase tracking-wider font-extrabold text-amber-400">
+                                    TERMA & SYARAT PERKHIDMATAN
+                                  </h4>
+                                  <span className="text-[10px] text-zinc-400">(Scroll untuk baca)</span>
+                                </div>
+
+                                <div className="max-h-56 overflow-y-auto pr-1.5 space-y-3 text-[11px] text-zinc-300 leading-relaxed">
+                                  <div>
+                                    <p className="font-bold text-white mb-1">1. TEMPAHAN DAN BAYARAN</p>
+                                    <ul className="space-y-1 pl-3 list-disc">
+                                      <li><span className="font-semibold text-zinc-100">Deposit Tempahan:</span> Bayaran deposit tetap sebanyak RM200 diperlukan untuk mengesahkan slot tarikh. Slot tidak dianggap sah sehingga deposit diterima.</li>
+                                      <li><span className="font-semibold text-zinc-100">Status Deposit:</span> Semua bayaran deposit adalah tidak akan dipulangkan (non-refundable) jika berlaku pembatalan daripada pihak pelanggan.</li>
+                                      <li><span className="font-semibold text-zinc-100">Baki Bayaran:</span> Baki penuh bayaran pakej mestilah dijelaskan selewat-lewatnya tujuh (7) hari sebelum tarikh majlis berlangsung.</li>
+                                      <li><span className="font-semibold text-zinc-100">Kegagalan Bayaran:</span> Firdaus Shah (FS Pictures) berhak membatalkan tempahan serta-merta tanpa pemulangan deposit sekiranya baki bayaran gagal diselesaikan dalam tempoh yang ditetapkan.</li>
+                                    </ul>
+                                  </div>
+
+                                  <div>
+                                    <p className="font-bold text-white mb-1">2. PENJADUALAN SEMULA & PERUBAHAN BUTIRAN</p>
+                                    <ul className="space-y-1 pl-3 list-disc">
+                                      <li><span className="font-semibold text-zinc-100">Notis Penjadualan:</span> Sebarang permohonan pertukaran tarikh mestilah dimaklumkan sekurang-kurangnya 30 hari sebelum tarikh asal. Pertukaran bergantung kepada kekosongan slot dan hanya dibenarkan satu (1) kali sahaja.</li>
+                                      <li><span className="font-semibold text-zinc-100">Perubahan Butiran:</span> Sebarang perubahan lokasi, masa, atau pakej mestilah dimaklumkan dalam masa yang mencukupi. Perubahan saat akhir (kurang 14 hari) mungkin dikenakan caj tambahan bergantung kepada logistik.</li>
+                                    </ul>
+                                  </div>
+
+                                  <div>
+                                    <p className="font-bold text-white mb-1">3. KELEWATAN DAN TEMPOH PENGGAMBARAN</p>
+                                    <ul className="space-y-1 pl-3 list-disc">
+                                      <li><span className="font-semibold text-zinc-100">Masa Sesi:</span> Sesi penggambaran bermula dan tamat mengikut waktu yang telah dipersetujui dalam pakej.</li>
+                                      <li><span className="font-semibold text-zinc-100">Kelewatan Pelanggan:</span> Jika majlis/pelanggan lewat melebihi 30 minit, Firdaus Shah (FS Pictures) berhak mengurangkan masa penggambaran atau menamatkan sesi mengikut waktu asal yang dijadualkan.</li>
+                                      <li><span className="font-semibold text-zinc-100">Caj Masa Tambahan (OT):</span> Sekiranya pelanggan memohon untuk menambah masa penggambaran di lokasi, caj tambahan sebanyak RM99 sejam akan dikenakan (tertakluk kepada ketersediaan).</li>
+                                    </ul>
+                                  </div>
+
+                                  <div>
+                                    <p className="font-bold text-white mb-1">4. TANGGUNGJAWAB PELANGGAN</p>
+                                    <ul className="space-y-1 pl-3 list-disc">
+                                      <li><span className="font-semibold text-zinc-100">Kerjasama:</span> Pelanggan bertanggungjawab memastikan tetamu dan ahli keluarga memberikan kerjasama serta akses ruang yang diperlukan untuk tujuan fotografi.</li>
+                                      <li><span className="font-semibold text-zinc-100">Kebenaran Lokasi:</span> Pelanggan bertanggungjawab mendapatkan kebenaran atau permit penggambaran di lokasi-lokasi tertentu (jika perlu).</li>
+                                      <li><span className="font-semibold text-zinc-100">Keselamatan Peralatan:</span> Pelanggan bertanggungjawab atas sebarang kerosakan atau kehilangan peralatan Firdaus Shah (FS Pictures) yang disebabkan oleh kecuaian pihak pelanggan atau tetamu semasa majlis. Kos ganti rugi akan ditanggung sepenuhnya oleh pelanggan.</li>
+                                    </ul>
+                                  </div>
+
+                                  <div>
+                                    <p className="font-bold text-white mb-1">5. PENGHANTARAN HASIL KERJA (DELIVERABLES)</p>
+                                    <ul className="space-y-1 pl-3 list-disc">
+                                      <li><span className="font-semibold text-zinc-100">Gambar Suntingan (Edit):</span> Gambar yang telah disunting sepenuhnya akan diserahkan dalam tempoh 4 hingga 8 minggu selepas tarikh majlis.</li>
+                                      <li><span className="font-semibold text-zinc-100">Gambar Mentah (Raw):</span> Gambar mentah (tanpa edit) boleh diberikan dalam tempoh 2 minggu selepas majlis (atas permintaan).</li>
+                                      <li><span className="font-semibold text-zinc-100">Album Foto:</span> Jika termasuk dalam pakej, album akan siap dalam tempoh 8 hingga 16 minggu selepas pelanggan selesai membuat pemilihan gambar.</li>
+                                      <li><span className="font-semibold text-zinc-100">Mod Penghantaran:</span> Hasil kerja akan dihantar melalui Google Drive / Pendrive / Album mengikut pakej yang ditempah.</li>
+                                    </ul>
+                                  </div>
+
+                                  <div>
+                                    <p className="font-bold text-white mb-1">6. HAK CIPTA DAN PENGGUNAAN</p>
+                                    <ul className="space-y-1 pl-3 list-disc">
+                                      <li>Firdaus Shah (FS Pictures) memegang hak cipta ke atas semua karya. Pihak kami berhak menggunakan gambar/video bagi tujuan pemasaran, portfolio, dan promosi di media sosial kecuali jika pelanggan menyatakan bantahan secara bertulis semasa tempahan dibuat.</li>
+                                    </ul>
+                                  </div>
+
+                                  <div>
+                                    <p className="font-bold text-white mb-1">7. PEMBATALAN & FORCE MAJEURE</p>
+                                    <ul className="space-y-1 pl-3 list-disc">
+                                      <li><span className="font-semibold text-zinc-100">Pembatalan oleh Firdaus Shah (FS Pictures):</span> Jika berlaku kecemasan yang tidak dapat dielakkan (sakit kronik, kemalangan, atau kerosakan peralatan utama), Firdaus Shah (FS Pictures) akan memberikan notis dan memulangkan bayaran penuh kepada pelanggan.</li>
+                                      <li><span className="font-semibold text-zinc-100">Force Majeure:</span> Firdaus Shah (FS Pictures) tidak bertanggungjawab atas kegagalan perkhidmatan akibat bencana alam, gangguan trafik luar biasa, atau isu teknikal di luar kawalan manusia.</li>
+                                    </ul>
+                                  </div>
+                                </div>
+
+                                <label className="pt-2.5 border-t border-zinc-800 flex items-start gap-2.5 cursor-pointer select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={agreedToTnC}
+                                    onChange={(e) => {
+                                      setAgreedToTnC(e.target.checked);
+                                      if (clientFormError) setClientFormError('');
+                                    }}
+                                    className="mt-0.5 w-4 h-4 rounded border-zinc-600 text-emerald-500 focus:ring-emerald-500 bg-zinc-900 shrink-0 cursor-pointer"
+                                  />
+                                  <span className="text-[11px] font-medium text-emerald-200 leading-snug">
+                                    Saya telah membaca dan bersetuju dengan semua <span className="underline font-bold">Terma & Syarat Perkhidmatan</span> di atas.
+                                  </span>
+                                </label>
+                              </div>
+
+                              {clientFormError && (
+                                <p className="text-xs text-amber-300 font-semibold">
+                                  {clientFormError}
+                                </p>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={handleDirectWhatsApp}
+                                className={`w-full py-3.5 px-4 rounded-xl font-extrabold text-sm flex items-center justify-center gap-2 transition-all ${
+                                  agreedToTnC
+                                    ? 'bg-emerald-500 hover:bg-emerald-400 active:scale-[0.99] text-zinc-950 shadow-lg shadow-emerald-500/20'
+                                    : 'bg-zinc-800 text-zinc-400 cursor-not-allowed'
+                                }`}
+                              >
+                                <IconWhatsApp className="w-4 h-4" />
+                                <span>Proceed to Book via WhatsApp</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Brand Footer */}
+                    <div className="pt-3 border-t border-zinc-800/60 flex items-center justify-between text-[11px] text-zinc-500">
+                      <span>IG / Threads: @firdaus.shah27</span>
+                      <span>FS Pictures</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </main>
+
+          {/* STICKY BOTTOM BAR KHAS UNTUK TELEFON PINTAR (MOBILE) */}
+          <div className="fixed bottom-0 inset-x-0 z-40 lg:hidden bg-zinc-950/95 backdrop-blur-lg border-t border-zinc-800 px-4 py-3 shadow-[0_-10px_30px_rgba(0,0,0,0.7)]">
+            <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
+              <div onClick={scrollToSummary} className="cursor-pointer min-w-0">
+                <span className="text-[10px] uppercase tracking-wider font-bold text-zinc-400 block">
+                  Total Investment
+                </span>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-xl font-extrabold text-amber-400">
+                    RM {formatRM(calculation.grandTotal)}
+                  </span>
+                  <span className="text-[11px] text-zinc-400 truncate max-w-[110px]">
+                    • {calculation.basePkg.name}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={scrollToSummary}
+                className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-zinc-950 font-extrabold text-xs flex items-center gap-1.5 shadow-lg shadow-amber-500/20 shrink-0"
+              >
+                <IconCalendar className="w-3.5 h-3.5" />
+                <span>View & Check Date</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
